@@ -1,0 +1,35 @@
+# Байт-компилированные / оптимизированные файлы
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Виртуальное окружение
+venv/
+env/
+ENV/
+
+# Файлы базы данных
+*.db
+*.sqlite
+*.sqlite3
+
+# Секреты и локальные настройки
+.env
+*.env
+
+# Логи и кэш
+*.log
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+
+# Директории инструментов
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Файлы операционной системы
+.DS_Store
+Thumbs.db
