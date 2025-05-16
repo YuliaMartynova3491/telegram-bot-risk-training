@@ -1,12 +1,16 @@
+# Основные зависимости
 python-telegram-bot==20.8
-langchain==0.1.8
-langchain-core>=0.1.24,<0.2.0
-langgraph==0.0.27
-langchain-community==0.0.21
-chromadb==0.4.22
-sentence-transformers==2.2.2
-python-dotenv==1.0.0
 sqlalchemy==2.0.27
-pydantic==2.5.3
+python-dotenv==1.0.0
+pydantic==2.4.2
 rich==13.7.0
-langchain-openai==0.0.5
+
+# Дополнительные библиотеки (по необходимости)
+# Раскомментируйте, если нужны дополнительные функции:
+# langchain==0.1.9
+# langchain-core>=0.1.24,<0.2.0
+# langgraph==0.0.27
+# langchain-community==0.0.21
+# chromadb==0.4.22
+# sentence-transformers==2.2.2
+# langchain-openai==0.0.5

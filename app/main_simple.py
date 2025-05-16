@@ -1,6 +1,5 @@
 """
-Точка входа в приложение.
-Запуск Telegram бота.
+Упрощенная точка входа в приложение для отладки.
 """
 import logging
 import sys
@@ -9,7 +8,7 @@ import os
 # Добавляем путь к корневой директории проекта
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.bot.handlers import run_bot
+from app.bot.handlers_simple import run_bot
 
 # Настройка логирования
 logging.basicConfig(
@@ -20,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 def main():
     """Основная функция для запуска приложения."""
-    logger.info("Запуск бота обучения рискам нарушения непрерывности деятельности")
+    logger.info("Запуск упрощенной версии бота для отладки")
     
     try:
         logger.info("Инициализация бота...")

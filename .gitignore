@@ -16,6 +16,7 @@ ENV/
 # Секреты и локальные настройки
 .env
 *.env
+app/config.py
 
 # Логи и кэш
 *.log
@@ -33,3 +34,10 @@ coverage.xml
 # Файлы операционной системы
 .DS_Store
 Thumbs.db
+
+# Бэкапы
+backups/
+
+# Конфиденциальная информация в любых файлах
+**/token*
+**/credentials*

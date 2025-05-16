@@ -2,7 +2,6 @@
 Модуль для генерации вопросов и работы с ними.
 """
 import json
-import random
 from typing import List, Dict, Any
 from app.database.models import get_db
 from app.database.operations import (
@@ -14,23 +13,8 @@ from app.database.operations import (
     calculate_lesson_success_percentage,
     update_user_progress
 )
-from app.config import QUESTIONS_PER_LESSON, MIN_SUCCESS_PERCENTAGE, RISK_KNOWLEDGE_PATH
-
-def load_knowledge_base(path: str = RISK_KNOWLEDGE_PATH) -> List[Dict[str, Any]]:
-    """Загружает базу знаний из JSONL файла."""
-    knowledge_base = []
-    try:
-        with open(path, 'r', encoding='utf-8') as f:
-            for line in f:
-                if line.strip():  # Проверяем, что строка не пустая
-                    knowledge_base.append(json.loads(line))
-        return knowledge_base
-    except FileNotFoundError:
-        print(f"Файл базы знаний не найден: {path}")
-        return []
-    except json.JSONDecodeError:
-        print(f"Ошибка декодирования JSON в файле: {path}")
-        return []
+from app.knowledge.rag import generate_questions as rag_generate_questions, convert_questions_for_db
+from app.config import QUESTIONS_PER_LESSON, MIN_SUCCESS_PERCENTAGE
 
 def generate_questions_for_lesson(lesson_id: int, topic: str, difficulty: str = "средний") -> List[Dict[str, Any]]:
     """Генерирует вопросы для урока."""
@@ -42,76 +26,21 @@ def generate_questions_for_lesson(lesson_id: int, topic: str, difficulty: str = 
     if existing_questions:
         return existing_questions
     
-    # Загружаем базу знаний
-    knowledge_base = load_knowledge_base()
-    if not knowledge_base:
-        print("Ошибка: база знаний пуста")
-        return []
+    # Генерируем новые вопросы с помощью RAG
+    questions = rag_generate_questions(topic, difficulty, QUESTIONS_PER_LESSON)
     
-    # Фильтруем базу знаний по теме и сложности
-    filtered_kb = [
-        item for item in knowledge_base 
-        if (
-            item.get('metadata', {}).get('topic', '').startswith(topic.split('_')[0]) and 
-            item.get('metadata', {}).get('difficulty', '') == difficulty
-        )
-    ]
+    # Преобразуем вопросы в формат для базы данных
+    db_questions = convert_questions_for_db(questions, lesson_id)
     
-    # Если не нашли подходящих элементов, используем все элементы базы
-    if not filtered_kb:
-        filtered_kb = knowledge_base
-    
-    # Создаем вопросы
-    questions = []
-    selected_items = []
-    
-    # Выбираем случайные элементы из базы знаний, не повторяясь
-    if len(filtered_kb) >= QUESTIONS_PER_LESSON:
-        selected_items = random.sample(filtered_kb, QUESTIONS_PER_LESSON)
-    else:
-        # Если не хватает элементов, используем все доступные и добавляем случайные из оставшихся
-        selected_items = filtered_kb.copy()
-        remaining = [item for item in knowledge_base if item not in selected_items]
-        if remaining:
-            additional_items = random.sample(remaining, min(QUESTIONS_PER_LESSON - len(selected_items), len(remaining)))
-            selected_items.extend(additional_items)
-    
-    # Создаем вопросы на основе выбранных элементов
-    for item in selected_items:
-        question_text = item['prompt']
-        correct_answer = item['response']
-        
-        # Формируем краткий ответ (первое предложение)
-        short_answer = correct_answer.split('.')[0] + '.'
-        
-        # Генерируем неправильные варианты, используя другие ответы из базы
-        other_answers = [
-            kb_item['response'].split('.')[0] + '.' 
-            for kb_item in knowledge_base 
-            if kb_item['response'] != correct_answer
-        ]
-        
-        # Выбираем случайные неправильные ответы
-        wrong_answers = random.sample(other_answers, min(3, len(other_answers)))
-        while len(wrong_answers) < 3:
-            wrong_answers.append("Недостаточно информации для ответа")
-        
-        # Формируем варианты ответов
-        options = [short_answer] + wrong_answers
-        random.shuffle(options)
-        
-        # Определяем правильный ответ
-        correct_index = options.index(short_answer)
-        correct_letter = chr(65 + correct_index)  # A, B, C или D
-        
-        # Сохраняем вопрос в базе данных
+    # Сохраняем вопросы в базе данных
+    for question_data in db_questions:
         create_question(
             db,
-            lesson_id=lesson_id,
-            text=question_text,
-            options=json.dumps(options, ensure_ascii=False),
-            correct_answer=correct_letter,
-            explanation=correct_answer
+            lesson_id=question_data["lesson_id"],
+            text=question_data["text"],
+            options=question_data["options"],
+            correct_answer=question_data["correct_answer"],
+            explanation=question_data["explanation"]
         )
     
     # Получаем созданные вопросы

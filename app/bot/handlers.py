@@ -2,6 +2,7 @@
 Модуль для обработчиков Telegram бота.
 """
 import logging
+import asyncio
 import json
 import random
 from typing import Dict, Any, List, Optional, Tuple, Union

@@ -1,16 +1,16 @@
 """
-Файл конфигурации проекта.
-Здесь хранятся основные настройки и константы.
+Шаблон файла конфигурации проекта.
+Скопируйте этот файл в config.py и заполните реальными значениями.
 """
 import os
-from dotenv import load_dotenv
 import pathlib
+from dotenv import load_dotenv
 
 # Загружаем переменные окружения из файла .env
 load_dotenv()
 
-# Токен Telegram бота
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "7270707347:AAFqbP-c8tGX-fIe2ZlB1NZfwiANLjcYOHM")
+# Токен Telegram бота - получаем из переменной окружения
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
 # Настройки базы данных
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///risk_training.db")
