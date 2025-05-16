@@ -119,13 +119,12 @@ def get_questions_by_lesson(db: Session, lesson_id: int):
     """Получает все вопросы урока."""
     return db.query(Question).filter(Question.lesson_id == lesson_id).all()
 
-def create_question(db: Session, lesson_id: int, text: str, options: list, correct_answer: str, explanation: str = None):
+def create_question(db: Session, lesson_id: int, text: str, options: str, correct_answer: str, explanation: str = None):
     """Создает новый вопрос."""
-    options_json = json.dumps(options, ensure_ascii=False)
     question = Question(
         lesson_id=lesson_id,
         text=text,
-        options=options_json,
+        options=options,
         correct_answer=correct_answer,
         explanation=explanation
     )
@@ -194,7 +193,7 @@ def get_course_progress(db: Session, user_id: int, course_id: int):
         if progress:
             progress_list.append(progress)
     
-    if not progress_list:
+    if not progress_list or not lessons:
         return 0.0
     
     completed_lessons = sum(1 for p in progress_list if p.is_completed)
@@ -213,21 +212,15 @@ def get_available_lessons(db: Session, user_id: int):
         for lesson_idx, lesson in enumerate(lessons):
             progress = get_user_progress(db, user_id, lesson.id)
             
-            # Первый урок первой темы всегда доступен
-            if course_idx == 0 and lesson_idx == 0:
-                available_lessons.append({
-                    "lesson": lesson,
-                    "course": course,
-                    "progress": progress,
-                    "is_available": True
-                })
-                continue
-            
-            # Проверяем доступность текущего урока
+            # Определяем доступность урока
             is_available = False
             
-            # Если это первый урок в теме (не первой)
-            if lesson_idx == 0 and course_idx > 0:
+            # Первый урок первой темы всегда доступен
+            if course_idx == 0 and lesson_idx == 0:
+                is_available = True
+            
+            # Если это первый урок не первой темы
+            elif lesson_idx == 0 and course_idx > 0:
                 # Проверяем, завершен ли последний урок предыдущей темы
                 prev_course = courses[course_idx - 1]
                 prev_lessons = get_lessons_by_course(db, prev_course.id)
@@ -238,6 +231,8 @@ def get_available_lessons(db: Session, user_id: int):
                     
                     if last_prev_progress and last_prev_progress.is_completed:
                         is_available = True
+            
+            # Если это не первый урок в теме
             else:
                 # Проверяем, завершен ли предыдущий урок в этой теме
                 prev_lesson = lessons[lesson_idx - 1]

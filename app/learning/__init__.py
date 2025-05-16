@@ -9,7 +9,8 @@
 
 from app.learning.courses import (
     COURSES,
-    init_courses
+    init_courses,
+    get_course_progress  # Добавляем функцию для расчета прогресса курса
 )
 
 from app.learning.lessons import (
@@ -30,6 +31,7 @@ __all__ = [
     # Курсы
     'COURSES',
     'init_courses',
+    'get_course_progress',  # Добавляем в экспорт
     
     # Уроки
     'LESSONS',

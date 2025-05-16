@@ -2,12 +2,12 @@
 Модуль для обработчиков Telegram бота.
 """
 import logging
-import asyncio
 import json
 import random
+import asyncio
 from typing import Dict, Any, List, Optional, Tuple, Union
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -31,7 +31,9 @@ from app.database.operations import (
     get_user_progress,
     get_or_create_user_progress,
     update_user_progress,
-    calculate_lesson_success_percentage
+    calculate_lesson_success_percentage,
+    get_course_progress,
+    get_question
 )
 from app.bot.keyboards import (
     get_main_menu_keyboard,
@@ -54,6 +56,7 @@ from app.learning.courses import init_courses
 from app.learning.lessons import init_lessons
 from app.learning.questions import (
     generate_questions_for_lesson,
+    get_options_for_question,
     check_answer,
     get_explanation,
     check_lesson_completion,
@@ -228,6 +231,11 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             lesson_id = int(callback_data.replace("lesson_", ""))
             await show_lesson(update, context, lesson_id)
     
+    # Обработка начала теста
+    elif callback_data.startswith("start_test_"):
+        lesson_id = int(callback_data.replace("start_test_", ""))
+        await start_test(update, context, lesson_id)
+    
     # Обработка ответа на вопрос
     elif callback_data.startswith("answer_"):
         parts = callback_data.split("_")
@@ -375,7 +383,8 @@ async def start_test(update: Update, context: ContextTypes.DEFAULT_TYPE, lesson_
     progress = get_or_create_user_progress(db, db_user.id, lesson_id)
     
     # Генерируем вопросы для урока
-    questions = generate_questions_for_lesson(lesson_id, course.name)
+    topic = course.name.lower().replace(" ", "_")
+    questions = generate_questions_for_lesson(lesson_id, topic)
     
     if not questions:
         await query.message.edit_text(
@@ -388,6 +397,7 @@ async def start_test(update: Update, context: ContextTypes.DEFAULT_TYPE, lesson_
     context.user_data['questions'] = [q.id for q in questions]
     context.user_data['lesson_id'] = lesson_id
     context.user_data['correct_answers'] = 0
+    context.user_data['wrong_answers_streak'] = 0
     
     # Отправляем первый вопрос
     await send_question(update, context)
@@ -409,7 +419,7 @@ async def send_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     # Получаем вопрос из базы данных
     db = get_db()
     question_id = questions[current_question_index]
-    question = db.query(get_question(db, question_id))
+    question = get_question(db, question_id)
     
     if not question:
         await query.message.edit_text(
@@ -420,7 +430,6 @@ async def send_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     # Формируем сообщение с вопросом
     question_number = current_question_index + 1
     total_questions = len(questions)
-    options = json.loads(question.options)
     
     message = (
         f"❓ *Вопрос {question_number} из {total_questions}*\n\n"
@@ -467,6 +476,9 @@ async def process_question_answer(update: Update, context: ContextTypes.DEFAULT_
     # Обновляем счетчик правильных ответов
     if is_correct:
         context.user_data['correct_answers'] = context.user_data.get('correct_answers', 0) + 1
+        context.user_data['wrong_answers_streak'] = 0
+    else:
+        context.user_data['wrong_answers_streak'] = context.user_data.get('wrong_answers_streak', 0) + 1
     
     # Получаем объяснение
     explanation = get_explanation(question_id)
@@ -486,12 +498,10 @@ async def process_question_answer(update: Update, context: ContextTypes.DEFAULT_
         )
     else:
         # Отправляем стикер
-        if context.user_data.get('wrong_answers_streak', 0) == 0:
+        if context.user_data.get('wrong_answers_streak', 0) == 1:
             await send_wrong_answer_sticker(context, chat_id, is_first=True)
-            context.user_data['wrong_answers_streak'] = 1
         else:
             await send_wrong_answer_sticker(context, chat_id, is_first=False)
-            context.user_data['wrong_answers_streak'] += 1
         
         result_message = (
             "❌ *Неправильно*\n\n"
@@ -680,6 +690,7 @@ async def show_progress(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 def run_bot():
     """Запускает Telegram бота."""
     # Инициализация данных
+    logger.info("Инициализация бота...")
     init_data()
     
     # Создание приложения

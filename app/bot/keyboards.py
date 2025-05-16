@@ -31,7 +31,8 @@ def get_lessons_keyboard(lessons, available_lessons=None):
     keyboard = []
     
     if available_lessons is None:
-        available_lessons = [True] * len(lessons)
+        # Делаем первый урок всегда доступным, остальные заблокированы
+        available_lessons = [i == 0 for i in range(len(lessons))]
     
     for lesson, is_available in zip(lessons, available_lessons):
         status_emoji = "🔓" if is_available else "🔒"
@@ -57,6 +58,10 @@ def get_available_lessons_keyboard(available_lessons_data):
         course = lesson_data["course"]
         is_available = lesson_data["is_available"]
         progress = lesson_data["progress"]
+        
+        # Принудительно делаем первый урок первой темы всегда доступным
+        if course.order == 1 and lesson.order == 1:
+            is_available = True
         
         # Добавляем заголовок темы, если это первый урок темы
         if current_course_id != course.id:
@@ -100,6 +105,14 @@ def get_question_options_keyboard(question):
             callback_data=f"answer_{question.id}_{chr(65+i)}"
         )])
     
+    return InlineKeyboardMarkup(keyboard)
+
+# Клавиатура для начала теста
+def get_start_test_keyboard(lesson_id):
+    """Создает клавиатуру для начала тестирования."""
+    keyboard = [
+        [InlineKeyboardButton("✅ Начать тест", callback_data=f"start_test_{lesson_id}")]
+    ]
     return InlineKeyboardMarkup(keyboard)
 
 # Клавиатура для продолжения обучения
