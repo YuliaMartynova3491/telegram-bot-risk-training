@@ -5,6 +5,7 @@
 import json
 import random
 import os
+import requests
 from typing import List, Dict, Any
 from langchain_community.vectorstores import Chroma
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -19,6 +20,30 @@ from app.config import RISK_KNOWLEDGE_PATH, LLM_MODEL_PATH, KNOWLEDGE_DIR
 
 # Создаем директорию для базы знаний, если она не существует
 os.makedirs(KNOWLEDGE_DIR, exist_ok=True)
+
+# Проверка доступности LM Studio
+def check_lm_studio_connection():
+    """Проверяет соединение с LM Studio."""
+    try:
+        headers = {"Content-Type": "application/json"}
+        data = {
+            "model": "local-model",
+            "messages": [{"role": "user", "content": "test"}],
+            "temperature": 0.7,
+            "max_tokens": 10
+        }
+        
+        response = requests.post(
+            f"{LLM_MODEL_PATH}/chat/completions", 
+            headers=headers, 
+            json=data,
+            timeout=5
+        )
+        
+        return response.status_code == 200
+    except Exception as e:
+        print(f"Ошибка при проверке соединения с LLM: {e}")
+        return False
 
 # Загрузка базы знаний
 def load_knowledge_base(path: str = RISK_KNOWLEDGE_PATH) -> List[Dict[str, Any]]:
@@ -85,15 +110,28 @@ def prepare_documents(knowledge_base: List[Dict[str, Any]]) -> List[Document]:
 # Инициализация LLM
 def init_llm():
     """Инициализирует модель для генерации вопросов."""
+    # ИСПРАВЛЕНИЕ: Улучшенная проверка подключения к LM Studio
+    if not check_lm_studio_connection():
+        print("ВНИМАНИЕ: Не удалось подключиться к LM Studio. Будет использован запасной вариант генерации вопросов.")
+        return None
+    
     # Используем модель через LM Studio (или другой локальный LLM)
-    llm = ChatOpenAI(
-        base_url=LLM_MODEL_PATH,
-        api_key="not-needed",
-        model_name="local-model",
-        temperature=0.7,
-        max_tokens=2048
-    )
-    return llm
+    # ИСПРАВЛЕНИЕ: Исправлен параметр base_url и добавлены дополнительные параметры для надежного подключения
+    try:
+        llm = ChatOpenAI(
+            base_url=LLM_MODEL_PATH,
+            api_key="not-needed",  # LM Studio не требует API ключа
+            model_name="local-model",
+            temperature=0.7,
+            max_tokens=2048,
+            request_timeout=30  # Увеличиваем таймаут для стабильности
+        )
+        # Проверяем модель простым запросом
+        test_response = llm.invoke([HumanMessage(content="Тестовое сообщение")])
+        return llm
+    except Exception as e:
+        print(f"Ошибка при инициализации LLM: {e}")
+        return None
 
 # Создание запроса для генерации вопросов
 def generate_question_prompt(context: str, topic: str, difficulty: str) -> str:
@@ -129,75 +167,85 @@ def generate_questions(
         print("Ошибка: база знаний пуста")
         return []
     
-    # Преобразуем базу знаний в документы
-    documents = prepare_documents(knowledge_base)
+    # ИСПРАВЛЕНИЕ: Проверяем доступность LLM Studio до создания векторного хранилища
+    use_rag = check_lm_studio_connection()
     
-    # Создаем векторное хранилище
-    try:
-        vectorstore = create_vector_store(documents)
-    except Exception as e:
-        print(f"Ошибка создания векторного хранилища: {e}")
-        # Используем запасной вариант - случайные вопросы из базы знаний
-        return fallback_generate_questions(knowledge_base, topic, difficulty, num_questions)
-    
-    # Инициализируем LLM
-    try:
-        llm = init_llm()
-    except Exception as e:
-        print(f"Ошибка инициализации LLM: {e}")
-        return fallback_generate_questions(knowledge_base, topic, difficulty, num_questions)
-    
-    # Поиск релевантных документов
-    retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
-    query = f"Информация о {topic}"
-    relevant_docs = retriever.get_relevant_documents(query)
-    
-    # Если не нашли релевантных документов, используем запасной вариант
-    if not relevant_docs:
-        return fallback_generate_questions(knowledge_base, topic, difficulty, num_questions)
-    
-    # Генерация вопросов
-    questions = []
-    for _ in range(num_questions):
-        # Выбираем случайный документ из релевантных
-        random_doc = random.choice(relevant_docs)
-        context = random_doc.page_content
+    if use_rag:
+        # Преобразуем базу знаний в документы
+        documents = prepare_documents(knowledge_base)
         
-        # Создаем промпт для генерации вопроса
-        prompt = generate_question_prompt(context, topic, difficulty)
-        
+        # Создаем векторное хранилище
         try:
-            # Генерируем вопрос
-            response = llm.invoke([HumanMessage(content=prompt)])
-            content = response.content
-            
-            # Извлекаем JSON из ответа
-            try:
-                # Ищем JSON в тексте
-                json_start = content.find("{")
-                json_end = content.rfind("}") + 1
-                if json_start != -1 and json_end != -1:
-                    json_str = content[json_start:json_end]
-                    question_data = json.loads(json_str)
-                    questions.append(question_data)
-                else:
-                    print("Не удалось найти JSON в ответе LLM")
-            except json.JSONDecodeError:
-                print("Ошибка декодирования JSON из ответа LLM")
+            vectorstore = create_vector_store(documents)
         except Exception as e:
-            print(f"Ошибка при генерации вопроса: {e}")
-    
-    # Если не удалось сгенерировать достаточно вопросов, используем запасной вариант
-    if len(questions) < num_questions:
-        additional_questions = fallback_generate_questions(
-            knowledge_base, 
-            topic, 
-            difficulty, 
-            num_questions - len(questions)
-        )
-        questions.extend(additional_questions)
-    
-    return questions
+            print(f"Ошибка создания векторного хранилища: {e}")
+            # Используем запасной вариант - случайные вопросы из базы знаний
+            return fallback_generate_questions(knowledge_base, topic, difficulty, num_questions)
+        
+        # Инициализируем LLM
+        llm = init_llm()
+        if not llm:
+            return fallback_generate_questions(knowledge_base, topic, difficulty, num_questions)
+        
+        # Поиск релевантных документов
+        retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
+        query = f"Информация о {topic}"
+        try:
+            relevant_docs = retriever.get_relevant_documents(query)
+        except Exception as e:
+            print(f"Ошибка при поиске релевантных документов: {e}")
+            return fallback_generate_questions(knowledge_base, topic, difficulty, num_questions)
+        
+        # Если не нашли релевантных документов, используем запасной вариант
+        if not relevant_docs:
+            return fallback_generate_questions(knowledge_base, topic, difficulty, num_questions)
+        
+        # Генерация вопросов
+        questions = []
+        for _ in range(num_questions):
+            # Выбираем случайный документ из релевантных
+            random_doc = random.choice(relevant_docs)
+            context = random_doc.page_content
+            
+            # Создаем промпт для генерации вопроса
+            prompt = generate_question_prompt(context, topic, difficulty)
+            
+            try:
+                # Генерируем вопрос
+                response = llm.invoke([HumanMessage(content=prompt)])
+                content = response.content
+                
+                # Извлекаем JSON из ответа
+                try:
+                    # Ищем JSON в тексте
+                    json_start = content.find("{")
+                    json_end = content.rfind("}") + 1
+                    if json_start != -1 and json_end != -1:
+                        json_str = content[json_start:json_end]
+                        question_data = json.loads(json_str)
+                        questions.append(question_data)
+                    else:
+                        print("Не удалось найти JSON в ответе LLM")
+                except json.JSONDecodeError:
+                    print("Ошибка декодирования JSON из ответа LLM")
+            except Exception as e:
+                print(f"Ошибка при генерации вопроса: {e}")
+        
+        # Если не удалось сгенерировать достаточно вопросов, используем запасной вариант
+        if len(questions) < num_questions:
+            additional_questions = fallback_generate_questions(
+                knowledge_base, 
+                topic, 
+                difficulty, 
+                num_questions - len(questions)
+            )
+            questions.extend(additional_questions)
+        
+        return questions
+    else:
+        # Если LLM недоступен, используем запасной вариант
+        print("LM Studio недоступна. Используем запасной вариант генерации вопросов.")
+        return fallback_generate_questions(knowledge_base, topic, difficulty, num_questions)
 
 # Запасной вариант генерации вопросов
 def fallback_generate_questions(
@@ -234,9 +282,13 @@ def fallback_generate_questions(
         question_text = item['prompt']
         correct_answer = item['response']
         
+        # Формируем краткий ответ (первое предложение)
+        short_answer = correct_answer.split('.')[0] + '.'
+        
         # Генерируем неправильные варианты, используя другие ответы из базы
         other_answers = [
-            kb_item['response'] for kb_item in knowledge_base 
+            kb_item['response'].split('.')[0] + '.' 
+            for kb_item in knowledge_base 
             if kb_item['response'] != correct_answer
         ]
         
@@ -246,18 +298,18 @@ def fallback_generate_questions(
             wrong_answers.append("Недостаточно информации для ответа")
         
         # Формируем варианты ответов
-        options = [correct_answer] + wrong_answers
+        options = [short_answer] + wrong_answers
         random.shuffle(options)
         
         # Определяем правильный ответ
-        correct_index = options.index(correct_answer)
+        correct_index = options.index(short_answer)
         correct_letter = chr(65 + correct_index)  # A, B, C или D
         
         question_data = {
             "question": question_text,
             "options": options,
             "correct_answer": correct_letter,
-            "explanation": f"Правильный ответ: {correct_letter}. {correct_answer}"
+            "explanation": correct_answer
         }
         
         questions.append(question_data)

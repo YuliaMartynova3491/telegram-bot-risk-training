@@ -55,9 +55,12 @@ async def show_lessons(update: Update, context: ContextTypes.DEFAULT_TYPE, cours
         if lesson_data["course"].id == course_id
     ]
     
-    # ИСПРАВЛЕНИЕ: Всегда делаем первый урок первой темы доступным
+    # ИСПРАВЛЕНИЕ: Принудительно делаем первый урок первой темы доступным
     if course_id == 1 and available_lessons_current_course:
-        available_lessons_current_course[0]["is_available"] = True
+        for lesson_data in available_lessons_current_course:
+            if lesson_data["lesson"].order == 1:
+                lesson_data["is_available"] = True
+                break
     
     # Создаем список доступности уроков
     available = [lesson_data["is_available"] for lesson_data in available_lessons_current_course]
@@ -97,7 +100,7 @@ async def show_progress(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     # Получаем доступные уроки
     available_lessons_data = get_available_lessons(db, db_user.id)
     
-    # ИСПРАВЛЕНИЕ: Всегда делаем первый урок первой темы доступным
+    # ИСПРАВЛЕНИЕ: Принудительно делаем первый урок первой темы доступным
     if available_lessons_data:
         for lesson_data in available_lessons_data:
             if lesson_data["course"].id == 1 and lesson_data["lesson"].order == 1:

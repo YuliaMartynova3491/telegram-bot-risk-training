@@ -11,7 +11,10 @@ from telegram.ext import ContextTypes
 
 from app.bot.stickers import (
     send_correct_answer_sticker,
-    send_wrong_answer_sticker
+    send_wrong_answer_sticker,
+    send_lesson_success_sticker,
+    send_lesson_fail_sticker,
+    send_topic_success_sticker
 )
 from app.database.models import get_db
 from app.database.operations import (
@@ -24,6 +27,7 @@ from app.learning.questions import (
     check_answer,
     get_explanation
 )
+from app.bot.keyboards import get_progress_bar
 
 logger = logging.getLogger(__name__)
 
@@ -82,9 +86,13 @@ async def handle_next_question(update: Update, context: ContextTypes.DEFAULT_TYP
             else:
                 await send_correct_answer_sticker(context, chat_id, is_first=False)
             
+            # ИСПРАВЛЕНИЕ: Разбиваем длинный текст объяснения на абзацы для лучшей читаемости
+            explanation_paragraphs = explanation.replace(". ", ".\n").split("\n")
+            formatted_explanation = "\n".join(explanation_paragraphs)
+            
             result_message = (
                 "✅ *Правильно!*\n\n"
-                f"{explanation}\n\n"
+                f"{formatted_explanation}\n\n"
                 "Переходим к следующему вопросу..."
             )
         else:
@@ -93,11 +101,31 @@ async def handle_next_question(update: Update, context: ContextTypes.DEFAULT_TYP
             else:
                 await send_wrong_answer_sticker(context, chat_id, is_first=False)
             
-            result_message = (
-                "❌ *Неправильно*\n\n"
-                f"{explanation}\n\n"
-                "Переходим к следующему вопросу..."
-            )
+            # ИСПРАВЛЕНИЕ: Разбиваем длинный текст объяснения на абзацы для лучшей читаемости
+            explanation_paragraphs = explanation.replace(". ", ".\n").split("\n")
+            formatted_explanation = "\n".join(explanation_paragraphs)
+            
+            # ИСПРАВЛЕНИЕ: Добавляем правильный ответ в читаемом формате
+            try:
+                options = json.loads(question.options)
+                correct_index = ord(question.correct_answer) - ord('A')
+                correct_option = options[correct_index] if 0 <= correct_index < len(options) else "Неизвестный вариант"
+                
+                result_message = (
+                    "❌ *Неправильный ответ*\n\n"
+                    f"Правильный ответ: *{question.correct_answer}*\n"
+                    f"{correct_option}\n\n"
+                    f"{formatted_explanation}\n\n"
+                    "Переходим к следующему вопросу..."
+                )
+            except Exception as e:
+                logger.error(f"Ошибка при форматировании объяснения: {e}")
+                result_message = (
+                    "❌ *Неправильный ответ*\n\n"
+                    f"Правильный ответ: *{question.correct_answer}*\n\n"
+                    f"{formatted_explanation}\n\n"
+                    "Переходим к следующему вопросу..."
+                )
         
         # Отправляем сообщение с результатом
         await query.message.edit_text(
@@ -139,8 +167,6 @@ async def handle_next_question(update: Update, context: ContextTypes.DEFAULT_TYP
         else:
             # Показываем результаты
             from app.learning.questions import check_lesson_completion
-            from app.bot.keyboards import get_continue_keyboard
-            from app.bot.stickers import send_lesson_success_sticker, send_lesson_fail_sticker, send_topic_success_sticker
             
             completion_data = check_lesson_completion(db_user.id, lesson_id)
             
@@ -153,7 +179,6 @@ async def handle_next_question(update: Update, context: ContextTypes.DEFAULT_TYP
             success_percentage = completion_data["success_percentage"]
             
             # Формируем прогресс-бар
-            from app.bot.keyboards import get_progress_bar
             progress_bar = get_progress_bar(success_percentage)
             
             if is_successful:
@@ -217,4 +242,6 @@ async def handle_next_question(update: Update, context: ContextTypes.DEFAULT_TYP
     
     except Exception as e:
         logger.error(f"Ошибка при обработке ответа на вопрос: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         await query.message.reply_text("Произошла ошибка при обработке ответа. Пожалуйста, попробуйте еще раз.")

@@ -42,6 +42,10 @@ def generate_questions_for_lesson(lesson_id: int, topic: str, difficulty: str = 
     if existing_questions:
         return existing_questions
     
+    # Используем прямое создание вопросов из базы знаний
+    # ИСПРАВЛЕНИЕ: Вместо использования RAG напрямую, используем локальную генерацию
+    # из имеющейся базы знаний
+    
     # Загружаем базу знаний
     knowledge_base = load_knowledge_base()
     if not knowledge_base:
@@ -61,11 +65,9 @@ def generate_questions_for_lesson(lesson_id: int, topic: str, difficulty: str = 
     if not filtered_kb:
         filtered_kb = knowledge_base
     
-    # Создаем вопросы
-    questions = []
+    # Выбираем случайные элементы для вопросов
     selected_items = []
     
-    # Выбираем случайные элементы из базы знаний, не повторяясь
     if len(filtered_kb) >= QUESTIONS_PER_LESSON:
         selected_items = random.sample(filtered_kb, QUESTIONS_PER_LESSON)
     else:

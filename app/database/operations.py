@@ -215,10 +215,9 @@ def get_available_lessons(db: Session, user_id: int):
             # Определяем доступность урока
             is_available = False
             
-            # Первый урок первой темы ВСЕГДА доступен
-            if course_idx == 0 and lesson_idx == 0:
+            # ИСПРАВЛЕНИЕ: Первый урок первой темы ВСЕГДА доступен
+            if course.id == 1 and lesson.order == 1:
                 is_available = True
-            
             # Если это первый урок не первой темы
             elif lesson_idx == 0 and course_idx > 0:
                 # Проверяем, завершен ли последний урок предыдущей темы

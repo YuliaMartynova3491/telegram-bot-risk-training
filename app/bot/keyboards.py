@@ -35,6 +35,13 @@ def get_lessons_keyboard(lessons, available_lessons=None):
         available_lessons = [i == 0 for i in range(len(lessons))]
     
     for lesson, is_available in zip(lessons, available_lessons):
+        # Проверяем, является ли это первым уроком первой темы
+        is_first_lesson_first_course = (lesson.course_id == 1 and lesson.order == 1)
+        
+        # Принудительно делаем первый урок первой темы доступным
+        if is_first_lesson_first_course:
+            is_available = True
+            
         status_emoji = "🔓" if is_available else "🔒"
         callback_data = f"lesson_{lesson.id}" if is_available else "lesson_locked"
         
@@ -60,7 +67,7 @@ def get_available_lessons_keyboard(available_lessons_data):
         progress = lesson_data["progress"]
         
         # Принудительно делаем первый урок первой темы всегда доступным
-        if course.order == 1 and lesson.order == 1:
+        if course.id == 1 and lesson.order == 1:
             is_available = True
         
         # Добавляем заголовок темы, если это первый урок темы
