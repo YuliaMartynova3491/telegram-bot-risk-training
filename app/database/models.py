@@ -4,7 +4,7 @@
 """
 from sqlalchemy import Column, Integer, String, Boolean, Float, DateTime, ForeignKey, Text, create_engine
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship, sessionmaker
+from sqlalchemy.orm import relationship, sessionmaker, scoped_session
 from datetime import datetime
 import os
 
@@ -109,10 +109,17 @@ class UserAnswer(Base):
 
 
 # Создаем движок базы данных
-engine = create_engine(DATABASE_URL)
+engine = create_engine(
+    DATABASE_URL, 
+    pool_size=20,  # Увеличиваем размер пула
+    max_overflow=20,  # Увеличиваем максимальное переполнение
+    pool_recycle=1800,  # Пересоздание соединений каждые 30 минут
+    pool_pre_ping=True  # Проверка соединения перед использованием
+)
 
-# Создаем фабрику сессий
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# Создаем фабрику сессий с использованием scoped_session для потокобезопасности
+session_factory = sessionmaker(bind=engine, autoflush=True, autocommit=False)
+SessionLocal = scoped_session(session_factory)
 
 # Функция для инициализации базы данных
 def init_db():

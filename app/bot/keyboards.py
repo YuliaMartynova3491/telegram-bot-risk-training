@@ -100,8 +100,13 @@ def get_question_options_keyboard(question):
     options = json.loads(question.options)
     
     for i, option in enumerate(options):
+        # Ограничиваем длину варианта ответа для лучшего отображения
+        # Telegram ограничивает длину текста кнопки до ~100 символов
+        max_length = 80
+        short_option = option[:max_length] + "..." if len(option) > max_length else option
+        
         keyboard.append([InlineKeyboardButton(
-            f"{chr(65+i)}. {option}", 
+            f"{chr(65+i)}. {short_option}", 
             callback_data=f"answer_{question.id}_{chr(65+i)}"
         )])
     

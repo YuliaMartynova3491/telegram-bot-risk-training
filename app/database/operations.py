@@ -215,7 +215,7 @@ def get_available_lessons(db: Session, user_id: int):
             # Определяем доступность урока
             is_available = False
             
-            # Первый урок первой темы всегда доступен
+            # Первый урок первой темы ВСЕГДА доступен
             if course_idx == 0 and lesson_idx == 0:
                 is_available = True
             
@@ -240,6 +240,10 @@ def get_available_lessons(db: Session, user_id: int):
                 
                 if prev_progress and prev_progress.is_completed:
                     is_available = True
+            
+            # Добавляем пройденные уроки в список доступных
+            if progress and progress.is_completed:
+                is_available = True
             
             available_lessons.append({
                 "lesson": lesson,

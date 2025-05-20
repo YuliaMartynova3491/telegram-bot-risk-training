@@ -69,12 +69,14 @@ def main():
             if response.status_code != 200:
                 logger.warning(f"Не удалось подключиться к LM Studio: {response.status_code}")
                 logger.warning("Бот будет запущен, но генерация вопросов может работать некорректно.")
+                logger.warning("Будет использоваться запасной вариант генерации вопросов.")
             else:
                 logger.info("Соединение с LM Studio установлено успешно.")
         
         except Exception as e:
             logger.warning(f"Ошибка при проверке соединения с LM Studio: {e}")
             logger.warning("Бот будет запущен, но генерация вопросов может работать некорректно.")
+            logger.warning("Будет использоваться запасной вариант генерации вопросов из базы знаний.")
         
         # Запуск Telegram бота
         run_bot(error_handler)
