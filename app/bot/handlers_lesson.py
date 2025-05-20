@@ -23,7 +23,8 @@ from app.database.operations import (
 from app.bot.keyboards import (
     get_question_options_keyboard,
     get_continue_keyboard,
-    get_lessons_keyboard
+    get_lessons_keyboard,
+    get_progress_bar
 )
 from app.bot.stickers import (
     send_correct_answer_sticker,
@@ -179,9 +180,13 @@ async def send_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     total_questions = len(questions)
     
     # ИСПРАВЛЕНИЕ: Форматируем вопрос с переносами строк для лучшей читаемости
+    question_text = question.text
+    if len(question_text) > 80:  # Если вопрос длинный, разбиваем по предложениям
+        question_text = question_text.replace('. ', '.\n')
+    
     message = (
         f"❓ *Вопрос {question_number} из {total_questions}*\n\n"
-        f"{question.text}\n\n"
+        f"{question_text}\n\n"
         "Выберите правильный ответ:"
     )
     
@@ -240,12 +245,9 @@ async def process_question_answer(update: Update, context: ContextTypes.DEFAULT_
     explanation = get_explanation(question_id)
     
     # ИСПРАВЛЕНИЕ: Форматируем объяснение с переносами строк для лучшей читаемости
-    # Ограничиваем длину объяснения и разбиваем его на части, если оно слишком длинное
-    max_explanation_length = 200
-    if len(explanation) > max_explanation_length:
-        short_explanation = explanation[:max_explanation_length] + "..." 
-    else:
-        short_explanation = explanation
+    # Разбиваем длинный текст объяснения на абзацы
+    explanation_paragraphs = explanation.replace(". ", ".\n").split("\n")
+    formatted_explanation = "\n".join(explanation_paragraphs)
     
     # Определяем правильный вариант ответа текстом
     options = json.loads(question.options)
@@ -263,7 +265,7 @@ async def process_question_answer(update: Update, context: ContextTypes.DEFAULT_
         result_message = (
             "✅ *Правильно!*\n\n"
             f"Ответ {question.correct_answer}: {correct_option_text}\n\n"
-            f"Объяснение: {short_explanation}\n\n"
+            f"Объяснение: {formatted_explanation}\n\n"
         )
     else:
         # Отправляем стикер
@@ -275,21 +277,13 @@ async def process_question_answer(update: Update, context: ContextTypes.DEFAULT_
         result_message = (
             "❌ *Неправильно*\n\n"
             f"Правильный ответ: {question.correct_answer}. {correct_option_text}\n\n"
-            f"Объяснение: {short_explanation}\n\n"
+            f"Объяснение: {formatted_explanation}\n\n"
         )
     
-    # ИСПРАВЛЕНИЕ: Добавляем кнопку "Попробовать еще раз" для неправильных ответов
-    keyboard = []
-    if not is_correct:
-        # Добавляем кнопку попробовать еще раз
-        keyboard.append([
-            InlineKeyboardButton("🔄 Попробовать еще раз", callback_data=f"retry_question_{question_id}")
-        ])
-    
-    # Добавляем кнопку продолжить
-    keyboard.append([
-        InlineKeyboardButton("▶️ Продолжить", callback_data=f"next_question")
-    ])
+    # ИСПРАВЛЕНИЕ: Добавляем кнопку "Продолжить"
+    keyboard = [
+        [InlineKeyboardButton("▶️ Продолжить", callback_data="next_question")]
+    ]
     
     # Отправляем сообщение с результатом
     await query.message.edit_text(
@@ -297,16 +291,14 @@ async def process_question_answer(update: Update, context: ContextTypes.DEFAULT_
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="Markdown"
     )
+
+async def handle_next_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Обрабатывает нажатие кнопки Продолжить."""
+    # Переходим к следующему вопросу
+    context.user_data['current_question'] = context.user_data.get('current_question', 0) + 1
     
-    # ИСПРАВЛЕНИЕ: Обрабатываем нажатие кнопки "Продолжить" отдельно
-    # чтобы не переходить автоматически к следующему вопросу
-    # Это исправит проблему зависания после трех неверных ответов
-    if callback_data == "next_question":
-        # Переходим к следующему вопросу
-        context.user_data['current_question'] = context.user_data.get('current_question', 0) + 1
-        
-        # Отправляем следующий вопрос
-        await send_question(update, context)
+    # Отправляем следующий вопрос
+    await send_question(update, context)
 
 async def show_test_results(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Показывает результаты тестирования."""
@@ -409,12 +401,3 @@ async def show_test_results(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     context.user_data.pop('lesson_id', None)
     context.user_data.pop('correct_answers', None)
     context.user_data.pop('wrong_answers_streak', None)
-
-# Добавляем функцию для обработки кнопки "Продолжить"
-async def handle_next_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Обрабатывает нажатие кнопки Продолжить."""
-    # Переходим к следующему вопросу
-    context.user_data['current_question'] = context.user_data.get('current_question', 0) + 1
-    
-    # Отправляем следующий вопрос
-    await send_question(update, context)

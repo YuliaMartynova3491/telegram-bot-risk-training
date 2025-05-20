@@ -60,7 +60,14 @@ from app.learning.questions import (
     check_lesson_completion,
     get_correct_answers_count
 )
-from app.bot.handlers_extra import handle_next_question
+from app.bot.handlers_extra import (
+    handle_answer_selection,
+    handle_retry_question,
+    handle_next_question,
+    send_question,
+    show_lesson_results
+)
+from app.bot.handlers_menu import show_lessons, show_progress
 
 # Настройка логирования
 logging.basicConfig(
@@ -176,7 +183,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             "3️⃣ **Ответы на вопросы**:\n"
             "   • После каждого урока вам будет предложено ответить на 3 вопроса\n"
             "   • Выбирайте один из предложенных вариантов ответа\n"
-            "   • После ответа вы получите объяснение\n\n"
+            "   • После ответа вы получите объяснение\n"
+            "   • При неправильном ответе вы можете попробовать ответить еще раз\n\n"
             
             "4️⃣ **Прогресс обучения**:\n"
             "   • В разделе 'Мой прогресс' вы можете увидеть пройденные и доступные уроки\n"
@@ -257,8 +265,16 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             question_id = int(parts[1])
             answer_letter = parts[2]
             
-            # Используем выделенную функцию для обработки ответа
-            await handle_next_question(update, context, question_id, answer_letter)
+            # Используем выделенную функцию для обработки выбора ответа
+            await handle_answer_selection(update, context, question_id, answer_letter)
+        
+        # Обработка кнопки "Попробовать еще раз"
+        elif callback_data.startswith("retry_question_"):
+            await handle_retry_question(update, context)
+        
+        # Обработка кнопки "Следующий вопрос"
+        elif callback_data.startswith("next_question_"):
+            await handle_next_question(update, context)
         
         # Возврат к меню тем
         elif callback_data == "back_to_courses":
@@ -289,47 +305,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             "Произошла ошибка при обработке запроса. Пожалуйста, попробуйте еще раз."
         )
 
-async def show_lessons(update: Update, context: ContextTypes.DEFAULT_TYPE, course_id: int) -> None:
-    """Показывает список уроков темы."""
-    query = update.callback_query
-    user = query.from_user
-    
-    # Получаем пользователя из базы данных
-    db = get_db()
-    db_user = get_or_create_user(
-        db,
-        telegram_id=user.id,
-        username=user.username,
-        first_name=user.first_name,
-        last_name=user.last_name
-    )
-    
-    # Получаем тему и уроки
-    course = get_course(db, course_id)
-    lessons = get_lessons_by_course(db, course_id)
-    
-    # Определяем доступность уроков
-    available_lessons_data = get_available_lessons(db, db_user.id)
-    
-    # Фильтруем только уроки текущей темы
-    available_lessons_current_course = [
-        lesson_data for lesson_data in available_lessons_data
-        if lesson_data["course"].id == course_id
-    ]
-    
-    # Создаем список доступности уроков
-    available = [lesson_data["is_available"] for lesson_data in available_lessons_current_course]
-    
-    # Формируем сообщение
-    message = f"📘 *{course.name}*\n\nВыберите урок:"
-    
-    # Редактируем сообщение
-    await query.message.edit_text(
-        message,
-        reply_markup=get_lessons_keyboard(lessons, available),
-        parse_mode="Markdown"
-    )
-
 async def show_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE, lesson_id: int) -> None:
     """Показывает содержимое урока."""
     query = update.callback_query
@@ -359,12 +334,32 @@ async def show_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE, lesson
     # Удаляем предыдущее сообщение
     await query.message.delete()
     
-    # Отправляем содержимое урока
-    await context.bot.send_message(
-        chat_id=chat_id,
-        text=f"📝 *{lesson.title}*\n\n{lesson.content}",
-        parse_mode="Markdown"
-    )
+    # Разбиваем содержимое на части, если оно слишком длинное
+    content = lesson.content
+    max_length = 4000  # Максимальная длина сообщения в Telegram
+    
+    if len(content) <= max_length:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"📝 *{lesson.title}*\n\n{content}",
+            parse_mode="Markdown"
+        )
+    else:
+        # Отправляем заголовок
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"📝 *{lesson.title}*",
+            parse_mode="Markdown"
+        )
+        
+        # Отправляем содержимое частями
+        chunks = [content[i:i+max_length] for i in range(0, len(content), max_length)]
+        for chunk in chunks:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=chunk,
+                parse_mode="Markdown"
+            )
     
     # Отправляем предложение пройти тест
     await context.bot.send_message(
@@ -406,93 +401,17 @@ async def start_test(update: Update, context: ContextTypes.DEFAULT_TYPE, lesson_
         )
         return
     
-    # Сохраняем первый вопрос в контексте
+    # Сохраняем информацию о тесте в контексте
     context.user_data.setdefault('lesson_data', {})
     context.user_data['lesson_data'].setdefault(lesson_id, {
         'current_question': 0,
-        'questions': [q.id for q in questions],
         'correct_answers': 0,
         'wrong_answers_streak': 0
     })
     
     # Отправляем первый вопрос
-    question = questions[0]
-    
-    message = (
-        f"❓ *Вопрос 1 из {len(questions)}*\n\n"
-        f"{question.text}\n\n"
-        "Выберите правильный ответ:"
-    )
-    
-    keyboard = get_question_options_keyboard(question)
-    
-    await query.message.edit_text(
-        message,
-        reply_markup=keyboard,
-        parse_mode="Markdown"
-    )
-
-async def show_progress(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Показывает прогресс обучения пользователя."""
-    if update.callback_query:
-        query = update.callback_query
-        chat_id = query.message.chat_id
-        user = query.from_user
-        message_obj = query.message
-    else:
-        chat_id = update.effective_chat.id
-        user = update.effective_user
-        message_obj = None
-    
-    # Получаем пользователя из базы данных
-    db = get_db()
-    db_user = get_or_create_user(
-        db,
-        telegram_id=user.id,
-        username=user.username,
-        first_name=user.first_name,
-        last_name=user.last_name
-    )
-    
-    # Получаем доступные уроки
-    available_lessons_data = get_available_lessons(db, db_user.id)
-    
-    # Если нет данных о прогрессе, показываем сообщение
-    if not available_lessons_data:
-        message = "📊 *Ваш прогресс обучения*\n\nВы еще не начали обучение. Выберите тему и начните изучение!"
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📚 Начать обучение", callback_data="course_1")],
-            [InlineKeyboardButton("🏠 Главное меню", callback_data="back_to_main")]
-        ])
-    else:
-        # Формируем сообщение с прогрессом
-        message = "📊 *Ваш прогресс обучения*\n\n"
-        
-        # Добавляем прогресс по темам
-        courses = get_all_courses(db)
-        for course in courses:
-            course_progress = get_course_progress(db, db_user.id, course.id)
-            message += f"📘 *{course.name}*: {get_progress_bar(course_progress)}\n\n"
-        
-        message += "Выберите урок для продолжения обучения:"
-        
-        # Создаем клавиатуру с доступными уроками
-        keyboard = get_available_lessons_keyboard(available_lessons_data)
-    
-    # Отправляем или редактируем сообщение
-    if message_obj:
-        await message_obj.edit_text(
-            message,
-            reply_markup=keyboard,
-            parse_mode="Markdown"
-        )
-    else:
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=message,
-            reply_markup=keyboard,
-            parse_mode="Markdown"
-        )
+    await query.message.delete()
+    await send_question(update, context, lesson_id, questions[0].id)
 
 def run_bot(error_handler=None):
     """Запускает Telegram бота."""

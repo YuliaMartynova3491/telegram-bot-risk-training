@@ -43,14 +43,12 @@ def generate_questions_for_lesson(lesson_id: int, topic: str, difficulty: str = 
         return existing_questions
     
     # Используем прямое создание вопросов из базы знаний
-    # ИСПРАВЛЕНИЕ: Вместо использования RAG напрямую, используем локальную генерацию
-    # из имеющейся базы знаний
-    
     # Загружаем базу знаний
     knowledge_base = load_knowledge_base()
     if not knowledge_base:
         print("Ошибка: база знаний пуста")
-        return []
+        # Создаем базовые заглушки вопросов
+        return create_default_questions(db, lesson_id)
     
     # Фильтруем базу знаний по теме и сложности
     filtered_kb = [
@@ -79,6 +77,7 @@ def generate_questions_for_lesson(lesson_id: int, topic: str, difficulty: str = 
             selected_items.extend(additional_items)
     
     # Создаем вопросы на основе выбранных элементов
+    created_questions = []
     for item in selected_items:
         question_text = item['prompt']
         correct_answer = item['response']
@@ -107,7 +106,7 @@ def generate_questions_for_lesson(lesson_id: int, topic: str, difficulty: str = 
         correct_letter = chr(65 + correct_index)  # A, B, C или D
         
         # Сохраняем вопрос в базе данных
-        create_question(
+        question = create_question(
             db,
             lesson_id=lesson_id,
             text=question_text,
@@ -115,9 +114,91 @@ def generate_questions_for_lesson(lesson_id: int, topic: str, difficulty: str = 
             correct_answer=correct_letter,
             explanation=correct_answer
         )
+        created_questions.append(question)
+    
+    # Если не удалось создать достаточно вопросов, добавляем дефолтные
+    if len(created_questions) < QUESTIONS_PER_LESSON:
+        default_questions = create_default_questions(db, lesson_id, QUESTIONS_PER_LESSON - len(created_questions))
+        created_questions.extend(default_questions)
     
     # Получаем созданные вопросы
     return get_questions_by_lesson(db, lesson_id)
+
+def create_default_questions(db, lesson_id: int, count: int = QUESTIONS_PER_LESSON) -> List[Dict[str, Any]]:
+    """Создает стандартные вопросы для урока, если база знаний недоступна."""
+    default_questions = [
+        {
+            "text": "Что такое риск нарушения непрерывности деятельности?",
+            "options": json.dumps([
+                "Риск нарушения способности организации поддерживать операционную устойчивость.",
+                "Риск потери денежных средств.",
+                "Риск изменения курса валют.",
+                "Риск увольнения сотрудников."
+            ], ensure_ascii=False),
+            "correct_answer": "A",
+            "explanation": "Риск нарушения непрерывности деятельности - это риск нарушения способности организации поддерживать операционную устойчивость, включающую обеспечение непрерывности осуществления критически важных процессов и операций, в результате воздействия угроз непрерывности."
+        },
+        {
+            "text": "Что такое угроза непрерывности?",
+            "options": json.dumps([
+                "Обстановка, сложившаяся в результате аварии или стихийного бедствия.",
+                "Отключение электроэнергии в офисе.",
+                "Увольнение директора организации.",
+                "Снижение рейтинга организации."
+            ], ensure_ascii=False),
+            "correct_answer": "A",
+            "explanation": "Угроза непрерывности (чрезвычайная ситуация) - это обстановка на определенной территории, сложившаяся в результате аварии, опасного природного явления, катастрофы и т.д., которые могут повлечь или повлекли за собой человеческие жертвы, ущерб здоровью людей или окружающей среде, значительные материальные потери."
+        },
+        {
+            "text": "Как классифицируются угрозы непрерывности?",
+            "options": json.dumps([
+                "Техногенные, природные, геополитические, социальные, биолого-социальные, экономические.",
+                "Внутренние и внешние.",
+                "Финансовые и нефинансовые.",
+                "Локальные и глобальные."
+            ], ensure_ascii=False),
+            "correct_answer": "A",
+            "explanation": "Угрозы непрерывности делятся на типы: техногенные, природные, геополитические, социальные, биолого-социальные, экономические. Каждый тип имеет свои характеристики и требует специфических мер по управлению."
+        },
+        {
+            "text": "Что такое оценка критичности процессов?",
+            "options": json.dumps([
+                "Процедура, в результате которой процессам присваивается категория критичности.",
+                "Проверка работоспособности процессов.",
+                "Оценка количества сотрудников, участвующих в процессе.",
+                "Расчет затрат на поддержание процесса."
+            ], ensure_ascii=False),
+            "correct_answer": "A",
+            "explanation": "Оценка критичности процессов - это процедура, в результате которой процессам присваивается категория критичности: критически важный, основной или прочий. Риск нарушения непрерывности оценивается только для критически важных процессов."
+        },
+        {
+            "text": "Какие категории критичности процессов существуют?",
+            "options": json.dumps([
+                "Критически важный, основной, прочий.",
+                "Высокий, средний, низкий.",
+                "Красный, желтый, зеленый.",
+                "Приоритетный, вторичный, третичный."
+            ], ensure_ascii=False),
+            "correct_answer": "A",
+            "explanation": "Существуют три категории критичности процессов: критически важный, основной и прочий. Риск нарушения непрерывности оценивается только для критически важных процессов."
+        }
+    ]
+    
+    # Создаем нужное количество вопросов в базе данных
+    created_questions = []
+    for i in range(min(count, len(default_questions))):
+        q = default_questions[i]
+        question = create_question(
+            db,
+            lesson_id=lesson_id,
+            text=q["text"],
+            options=q["options"],
+            correct_answer=q["correct_answer"],
+            explanation=q["explanation"]
+        )
+        created_questions.append(question)
+    
+    return created_questions
 
 def get_options_for_question(question_id: int) -> List[str]:
     """Получает варианты ответов для вопроса."""

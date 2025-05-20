@@ -45,7 +45,7 @@ async def error_handler(update, context):
         )
 
 def check_lm_studio_connection(url):
-    """Проверяет подключение к LM Studio."""
+    """Проверяет подключение к LM Studio с очень коротким таймаутом."""
     try:
         headers = {"Content-Type": "application/json"}
         data = {
@@ -59,7 +59,7 @@ def check_lm_studio_connection(url):
             f"{url}/chat/completions", 
             headers=headers, 
             json=data,
-            timeout=5
+            timeout=1  # Очень короткий таймаут для быстрой проверки
         )
         
         logger.info(f"Проверка подключения к LM Studio: status_code={response.status_code}")
@@ -69,8 +69,15 @@ def check_lm_studio_connection(url):
             return True
         else:
             logger.warning(f"Не удалось подключиться к LM Studio: {response.status_code}")
-            logger.warning(f"Ответ: {response.text[:200]}...")
+            if hasattr(response, 'text'):
+                logger.warning(f"Ответ: {response.text[:200]}...")
             return False
+    except requests.exceptions.ConnectTimeout:
+        logger.warning("Таймаут соединения с LM Studio. Сервер не отвечает.")
+        return False
+    except requests.exceptions.ConnectionError:
+        logger.warning("Ошибка соединения с LM Studio. Сервер недоступен.")
+        return False
     except Exception as e:
         logger.error(f"Ошибка при проверке соединения с LM Studio: {e}")
         return False
@@ -91,8 +98,9 @@ def main():
         try:
             from app.config import LLM_MODEL_PATH
             
-            # ИСПРАВЛЕНИЕ: Улучшенная проверка соединения с LM Studio
-            if check_lm_studio_connection(LLM_MODEL_PATH):
+            # Используем проверку соединения с очень коротким таймаутом
+            connected = check_lm_studio_connection(LLM_MODEL_PATH)
+            if connected:
                 logger.info("LM Studio доступен и готов к использованию.")
             else:
                 logger.warning("LM Studio недоступен. Бот будет использовать запасной вариант генерации вопросов.")

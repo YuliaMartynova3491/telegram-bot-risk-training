@@ -34,15 +34,17 @@ def get_lessons_keyboard(lessons, available_lessons=None):
         # Делаем первый урок всегда доступным, остальные заблокированы
         available_lessons = [i == 0 for i in range(len(lessons))]
     
-    for lesson, is_available in zip(lessons, available_lessons):
+    for i, (lesson, is_available) in enumerate(zip(lessons, available_lessons)):
         # Проверяем, является ли это первым уроком первой темы
         is_first_lesson_first_course = (lesson.course_id == 1 and lesson.order == 1)
         
-        # Принудительно делаем первый урок первой темы доступным
+        # Принудительно делаем первый урок первой темы доступным и БЕЗ замочка
         if is_first_lesson_first_course:
             is_available = True
+            status_emoji = "📝"  # Используем другой эмодзи для первого урока
+        else:
+            status_emoji = "🔓" if is_available else "🔒"
             
-        status_emoji = "🔓" if is_available else "🔒"
         callback_data = f"lesson_{lesson.id}" if is_available else "lesson_locked"
         
         keyboard.append([InlineKeyboardButton(
@@ -66,9 +68,13 @@ def get_available_lessons_keyboard(available_lessons_data):
         is_available = lesson_data["is_available"]
         progress = lesson_data["progress"]
         
-        # Принудительно делаем первый урок первой темы всегда доступным
+        # Принудительно делаем первый урок первой темы всегда доступным и без замочка
         if course.id == 1 and lesson.order == 1:
             is_available = True
+            status_emoji = "📝" if not (progress and progress.is_completed) else "✅"
+        else:
+            # Определяем эмодзи для статуса урока
+            status_emoji = "✅" if progress and progress.is_completed else "🔓" if is_available else "🔒"
         
         # Добавляем заголовок темы, если это первый урок темы
         if current_course_id != course.id:
@@ -77,9 +83,6 @@ def get_available_lessons_keyboard(available_lessons_data):
                 callback_data=f"course_info_{course.id}"
             )])
             current_course_id = course.id
-        
-        # Определяем эмодзи для статуса урока
-        status_emoji = "✅" if progress and progress.is_completed else "🔓" if is_available else "🔒"
         
         # Определяем callback_data
         if progress and progress.is_completed:
@@ -107,14 +110,11 @@ def get_question_options_keyboard(question):
     options = json.loads(question.options)
     
     for i, option in enumerate(options):
-        # Ограничиваем длину варианта ответа для лучшего отображения
-        # Telegram ограничивает длину текста кнопки до ~100 символов
-        max_length = 80
-        short_option = option[:max_length] + "..." if len(option) > max_length else option
+        letter = chr(65 + i)  # A, B, C, D...
         
         keyboard.append([InlineKeyboardButton(
-            f"{chr(65+i)}. {short_option}", 
-            callback_data=f"answer_{question.id}_{chr(65+i)}"
+            letter, 
+            callback_data=f"answer_{question.id}_{letter}"
         )])
     
     return InlineKeyboardMarkup(keyboard)
@@ -141,6 +141,15 @@ def get_continue_keyboard(next_lesson_id=None):
     keyboard.append([InlineKeyboardButton("📊 Мой прогресс", callback_data="progress")])
     keyboard.append([InlineKeyboardButton("🏠 Главное меню", callback_data="back_to_main")])
     
+    return InlineKeyboardMarkup(keyboard)
+
+# Клавиатура для неправильного ответа
+def get_wrong_answer_keyboard(question_id, lesson_id):
+    """Создает клавиатуру с кнопками для неправильного ответа."""
+    keyboard = [
+        [InlineKeyboardButton("🔄 Попробовать еще раз", callback_data=f"retry_question_{question_id}")],
+        [InlineKeyboardButton("▶️ Следующий вопрос", callback_data=f"next_question_{lesson_id}")]
+    ]
     return InlineKeyboardMarkup(keyboard)
 
 # Прогресс-бар
