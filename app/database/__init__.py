@@ -1,106 +1,116 @@
 """
-Модуль для работы с базой данных.
-
-Этот модуль содержит компоненты для взаимодействия с базой данных:
-- models.py: Определение моделей данных (ORM)
-- operations.py: CRUD-операции для работы с моделями
+Инициализация модуля базы данных.
 """
 
-from app.database.models import (
-    Base, 
-    User, 
-    Course, 
-    Lesson, 
-    Question, 
-    UserProgress, 
+# Импортируем модели
+from .models import (
+    Base,
+    User,
+    Lesson,
+    Question,
+    UserProgress,
     UserAnswer,
     init_db,
-    get_db
+    get_db,
+    close_db,
+    test_connection,
+    engine,
+    SessionLocal
 )
 
-from app.database.operations import (
-    # Операции с пользователями
-    get_user_by_telegram_id,
-    create_user,
+# Импортируем операции
+from .operations import (
     get_or_create_user,
-    update_user_activity,
-    
-    # Операции с курсами
-    get_all_courses,
-    get_course,
-    create_course,
-    
-    # Операции с уроками
-    get_lessons_by_course,
-    get_lesson,
-    create_lesson,
-    get_next_lesson,
-    
-    # Операции с вопросами
-    get_questions_by_lesson,
-    create_question,
-    get_question,
-    
-    # Операции с прогрессом пользователя
     get_user_progress,
-    create_user_progress,
-    get_or_create_user_progress,
     update_user_progress,
-    get_user_lessons_progress,
-    get_course_progress,
-    get_available_lessons,
-    
-    # Операции с ответами пользователя
-    create_user_answer,
-    get_user_answers_by_lesson,
-    calculate_lesson_success_percentage
+    save_user_answer,
+    get_all_lessons,
+    get_lesson_by_id,
+    get_lesson,
+    get_course,
+    get_questions_by_lesson,
+    get_question_by_id,
+    get_user_statistics,
+    create_default_lessons,
+    add_question_to_lesson,
+    get_user_by_telegram_id,
+    get_user_answers_for_lesson
 )
 
+# Алиасы для совместимости
+create_user = get_or_create_user  # Алиас для старых импортов
+create_user_progress = update_user_progress  # Алиас
+get_or_create_user_progress = update_user_progress  # Алиас
+create_user_answer = save_user_answer  # Алиас
+
+# Функции создания объектов для совместимости
+def create_course():
+    """Заглушка для создания курса (используйте create_default_lessons)."""
+    pass
+
+def create_lesson(db, **kwargs):
+    """Создает урок."""
+    lesson = Lesson(**kwargs)
+    db.add(lesson)
+    db.commit()
+    db.refresh(lesson)
+    return lesson
+
+def create_question(db, **kwargs):
+    """Создает вопрос."""
+    question = Question(**kwargs)
+    db.add(question)
+    db.commit()
+    db.refresh(question)
+    return question
+
+# Экспортируемые элементы
 __all__ = [
     # Модели
-    'Base', 
-    'User', 
-    'Course', 
-    'Lesson', 
-    'Question', 
-    'UserProgress', 
+    'Base',
+    'User',
+    'Lesson',
+    'Question',
+    'UserProgress',
     'UserAnswer',
+    
+    # Функции работы с БД
     'init_db',
     'get_db',
+    'close_db',
+    'test_connection',
+    'engine',
+    'SessionLocal',
     
     # Операции с пользователями
-    'get_user_by_telegram_id',
-    'create_user',
     'get_or_create_user',
-    'update_user_activity',
+    'create_user',  # алиас
+    'get_user_by_telegram_id',
+    'get_user_statistics',
     
-    # Операции с курсами
-    'get_all_courses',
-    'get_course',
-    'create_course',
+    # Операции с прогрессом
+    'get_user_progress',
+    'update_user_progress',
+    'create_user_progress',  # алиас
+    'get_or_create_user_progress',  # алиас
+    
+    # Операции с ответами
+    'save_user_answer',
+    'create_user_answer',  # алиас
+    'get_user_answers_for_lesson',
     
     # Операции с уроками
-    'get_lessons_by_course',
+    'get_all_lessons',
+    'get_lesson_by_id',
     'get_lesson',
+    'get_course',
+    'create_default_lessons',
     'create_lesson',
-    'get_next_lesson',
+    'create_course',
     
     # Операции с вопросами
     'get_questions_by_lesson',
-    'create_question',
-    'get_question',
-    
-    # Операции с прогрессом пользователя
-    'get_user_progress',
-    'create_user_progress',
-    'get_or_create_user_progress',
-    'update_user_progress',
-    'get_user_lessons_progress',
-    'get_course_progress',
-    'get_available_lessons',
-    
-    # Операции с ответами пользователя
-    'create_user_answer',
-    'get_user_answers_by_lesson',
-    'calculate_lesson_success_percentage'
+    'get_question_by_id',
+    'add_question_to_lesson',
+    'create_question'
 ]

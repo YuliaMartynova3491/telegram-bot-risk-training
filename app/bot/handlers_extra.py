@@ -1,5 +1,6 @@
 """
 Модуль с дополнительными обработчиками для бота.
+Исправленная версия с улучшенным форматированием вопросов.
 """
 import logging
 import json
@@ -21,7 +22,8 @@ from app.database.operations import (
     get_or_create_user,
     get_question,
     get_lesson,
-    get_next_lesson
+    get_next_lesson,
+    update_user_progress
 )
 from app.learning.questions import (
     check_answer,
@@ -33,8 +35,54 @@ from app.bot.keyboards import (
     get_wrong_answer_keyboard,
     get_question_options_keyboard
 )
+from app.config import MIN_SUCCESS_PERCENTAGE
 
 logger = logging.getLogger(__name__)
+
+def format_question_with_options(question_text: str, options: list) -> str:
+    """
+    Форматирует вопрос с вариантами ответов для красивого отображения.
+    
+    Args:
+        question_text: Текст вопроса
+        options: Список вариантов ответов
+    
+    Returns:
+        Отформатированная строка с вопросом и вариантами
+    """
+    formatted = f"❓ **{question_text}**\n\n"
+    
+    letters = ['A', 'B', 'C', 'D', 'E', 'F']  # На случай, если будет больше 4 вариантов
+    
+    for i, option in enumerate(options):
+        if i < len(letters):
+            formatted += f"**{letters[i]}.** {option}\n\n"
+    
+    return formatted.rstrip()  # Убираем последние лишние переносы
+
+def create_answer_keyboard(question_id: int, num_options: int):
+    """
+    Создает клавиатуру с вариантами ответов.
+    
+    Args:
+        question_id: ID вопроса
+        num_options: Количество вариантов ответов
+    
+    Returns:
+        InlineKeyboardMarkup с кнопками вариантов ответов
+    """
+    letters = ['A', 'B', 'C', 'D', 'E', 'F']
+    buttons = []
+    
+    # Создаем кнопки для каждого варианта
+    for i in range(min(num_options, len(letters))):
+        button = InlineKeyboardButton(
+            text=f"🔘 {letters[i]}",
+            callback_data=f"answer_{question_id}_{letters[i]}"
+        )
+        buttons.append([button])
+    
+    return InlineKeyboardMarkup(buttons)
 
 async def handle_answer_selection(update: Update, context: ContextTypes.DEFAULT_TYPE, question_id: int, answer_letter: str) -> None:
     """Обрабатывает выбор варианта ответа пользователем."""
@@ -61,7 +109,13 @@ async def handle_answer_selection(update: Update, context: ContextTypes.DEFAULT_
             return
         
         # Получаем варианты ответов
-        options = json.loads(question.options)
+        if isinstance(question.options, str):
+            try:
+                options = json.loads(question.options)
+            except:
+                options = [opt.strip() for opt in question.options.split('\n') if opt.strip()]
+        else:
+            options = question.options
         
         # Находим текст выбранного варианта
         option_index = ord(answer_letter) - ord('A')
@@ -71,12 +125,13 @@ async def handle_answer_selection(update: Update, context: ContextTypes.DEFAULT_
             selected_option = "Неизвестный вариант"
         
         # Создаем сообщение с текстом выбранного ответа
-        message_text = f"Выбран ответ: {answer_letter}. {selected_option}"
+        message_text = f"Выбран ответ: **{answer_letter}.** {selected_option}"
         
         # Отправляем сообщение с выбранным ответом в чат
         sent_message = await context.bot.send_message(
             chat_id=chat_id,
-            text=message_text
+            text=message_text,
+            parse_mode="Markdown"
         )
         
         # Сохраняем ID сообщения с ответом для возможного удаления
@@ -146,6 +201,15 @@ async def check_answer_and_respond(update: Update, context: ContextTypes.DEFAULT
         else:
             context.user_data['lesson_data'][lesson_id]['wrong_answers_streak'] = context.user_data['lesson_data'][lesson_id].get('wrong_answers_streak', 0) + 1
         
+        # Получаем варианты ответов для отображения правильного варианта
+        if isinstance(question.options, str):
+            try:
+                options = json.loads(question.options)
+            except:
+                options = [opt.strip() for opt in question.options.split('\n') if opt.strip()]
+        else:
+            options = question.options
+        
         # Отправляем стикер в зависимости от результата
         if is_correct:
             if context.user_data['lesson_data'][lesson_id].get('correct_answers', 0) == 1:
@@ -153,13 +217,19 @@ async def check_answer_and_respond(update: Update, context: ContextTypes.DEFAULT
             else:
                 await send_correct_answer_sticker(context, chat_id, is_first=False)
             
+            # Находим правильный ответ для отображения
+            correct_letter = question.correct_answer
+            correct_index = ord(correct_letter) - ord('A')
+            correct_option = options[correct_index] if 0 <= correct_index < len(options) else "Неизвестный вариант"
+            
             # Форматируем объяснение для лучшей читаемости
             explanation_formatted = format_explanation(explanation)
             
             # Отправляем сообщение о правильном ответе
             result_message = (
-                "✅ *Правильно!*\n\n"
-                f"{explanation_formatted}"
+                "✅ **Правильно!**\n\n"
+                f"**Ответ {correct_letter}:** {correct_option}\n\n"
+                f"**Объяснение:** {explanation_formatted}"
             )
             
             await context.bot.send_message(
@@ -171,8 +241,16 @@ async def check_answer_and_respond(update: Update, context: ContextTypes.DEFAULT
             # Переходим к следующему вопросу
             next_idx = current_idx + 1
             if next_idx < len(question_ids):
-                # Отправляем новый вопрос
-                await send_question(update, context, lesson_id, question_ids[next_idx])
+                # Отправляем кнопку "Продолжить"
+                keyboard = [[InlineKeyboardButton("▶️ Продолжить", callback_data="next_question")]]
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="Готовы к следующему вопросу?",
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
+                # Сохраняем следующий вопрос в контексте
+                context.user_data['next_question_id'] = question_ids[next_idx]
+                context.user_data['lesson_id'] = lesson_id
             else:
                 # Если вопросы закончились, показываем результаты
                 await show_lesson_results(update, context, lesson_id)
@@ -190,24 +268,26 @@ async def check_answer_and_respond(update: Update, context: ContextTypes.DEFAULT
             # Находим правильный ответ
             correct_letter = question.correct_answer
             correct_index = ord(correct_letter) - ord('A')
-            options = json.loads(question.options)
             correct_option = options[correct_index] if 0 <= correct_index < len(options) else "Неизвестный вариант"
             
             # Отправляем сообщение о неправильном ответе с подсказкой
             result_message = (
-                "❌ *Неправильно*\n\n"
-                f"Правильный ответ: *{correct_letter}*. {correct_option}\n\n"
-                f"{explanation_formatted}"
+                "❌ **Неправильно**\n\n"
+                f"**Правильный ответ: {correct_letter}.** {correct_option}\n\n"
+                f"**Объяснение:** {explanation_formatted}"
             )
             
             # Создаем клавиатуру для неправильного ответа
-            keyboard = get_wrong_answer_keyboard(question_id, lesson_id)
+            keyboard = [
+                [InlineKeyboardButton("🔄 Попробовать еще раз", callback_data=f"retry_question_{question_id}")],
+                [InlineKeyboardButton("▶️ Следующий вопрос", callback_data=f"next_question_{lesson_id}")]
+            ]
             
             # Отправляем сообщение с объяснением и кнопками
             await context.bot.send_message(
                 chat_id=chat_id,
                 text=result_message,
-                reply_markup=keyboard,
+                reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode="Markdown"
             )
             
@@ -217,8 +297,8 @@ async def check_answer_and_respond(update: Update, context: ContextTypes.DEFAULT
         logger.error(traceback.format_exc())
         await query.message.reply_text("Произошла ошибка при проверке ответа. Пожалуйста, попробуйте еще раз.")
 
-async def send_question(update: Update, context: ContextTypes.DEFAULT_TYPE, lesson_id: int, question_id: int = None) -> None:
-    """Отправляет вопрос пользователю."""
+async def send_question(update: Update, context: ContextTypes.DEFAULT_TYPE, lesson_id: int = None, question_id: int = None) -> None:
+    """Отправляет вопрос пользователю с улучшенным форматированием."""
     # Если это callback query, получаем данные из него
     if update.callback_query:
         query = update.callback_query
@@ -238,8 +318,13 @@ async def send_question(update: Update, context: ContextTypes.DEFAULT_TYPE, less
         last_name=user.last_name
     )
     
-    # Если question_id не указан, берем первый вопрос урока
+    # Если question_id не указан, проверяем контекст
     if question_id is None:
+        question_id = context.user_data.get('next_question_id')
+        lesson_id = context.user_data.get('lesson_id', lesson_id)
+    
+    # Если question_id все еще None, берем первый вопрос урока
+    if question_id is None and lesson_id:
         questions = get_questions_by_lesson(db, lesson_id)
         if not questions:
             # Если нет вопросов для урока, сообщаем об ошибке
@@ -259,6 +344,10 @@ async def send_question(update: Update, context: ContextTypes.DEFAULT_TYPE, less
         )
         return
     
+    # Если lesson_id не указан, получаем его из вопроса
+    if lesson_id is None:
+        lesson_id = question.lesson_id
+    
     # Определяем номер вопроса
     questions = get_questions_by_lesson(db, lesson_id)
     question_ids = [q.id for q in questions]
@@ -266,31 +355,50 @@ async def send_question(update: Update, context: ContextTypes.DEFAULT_TYPE, less
     question_number = current_idx + 1
     total_questions = len(questions)
     
-    # Получаем варианты ответов
-    options = json.loads(question.options)
+    # Парсим варианты ответов
+    if isinstance(question.options, str):
+        try:
+            options = json.loads(question.options)
+        except:
+            options = [opt.strip() for opt in question.options.split('\n') if opt.strip()]
+    else:
+        options = question.options
     
-    # Формируем текст вопроса
-    question_text = (
-        f"❓ *Вопрос {question_number} из {total_questions}*\n\n"
-        f"{question.text}\n\n"
-        "Выберите правильный ответ:\n"
-    )
+    # Добавляем информацию о прогрессе
+    progress_text = f"📊 Вопрос {question_number} из {total_questions}\n\n"
     
-    # Добавляем варианты ответов в текст вопроса
-    for i, option in enumerate(options):
-        letter = chr(65 + i)  # A, B, C, D...
-        question_text += f"{letter}. {option}\n"
+    # Добавляем индикатор сложности
+    difficulty_map = {
+        "легкий": "⭐",
+        "средний": "⭐⭐", 
+        "сложный": "⭐⭐⭐"
+    }
+    difficulty = getattr(question, 'difficulty', 'средний')
+    difficulty_indicator = difficulty_map.get(difficulty, "⭐⭐")
+    difficulty_text = f"{difficulty_indicator} **Сложность:** {difficulty}\n\n"
     
-    # Создаем клавиатуру с вариантами ответов (только буквы)
-    keyboard = get_question_options_keyboard(question)
+    # Форматируем вопрос с вариантами ответов
+    question_text = format_question_with_options(question.text, options)
+    
+    full_text = f"{progress_text}{difficulty_text}{question_text}"
+    
+    # Создаем клавиатуру с вариантами ответов
+    keyboard = create_answer_keyboard(question.id, len(options))
     
     # Отправляем вопрос с вариантами ответов
-    await context.bot.send_message(
-        chat_id=chat_id,
-        text=question_text,
-        reply_markup=keyboard,
-        parse_mode="Markdown"
-    )
+    if update.callback_query:
+        await update.callback_query.message.edit_text(
+            full_text,
+            reply_markup=keyboard,
+            parse_mode="Markdown"
+        )
+    else:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=full_text,
+            reply_markup=keyboard,
+            parse_mode="Markdown"
+        )
 
 async def handle_retry_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обрабатывает нажатие кнопки 'Попробовать еще раз'."""
@@ -311,35 +419,50 @@ async def handle_retry_question(update: Update, context: ContextTypes.DEFAULT_TY
     await send_question(update, context, question.lesson_id, question_id)
 
 async def handle_next_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Обрабатывает нажатие кнопки 'Следующий вопрос'."""
+    """Обрабатывает нажатие кнопки 'Следующий вопрос' или 'Продолжить'."""
     query = update.callback_query
     chat_id = query.message.chat_id
     
-    # Получаем ID урока из callback_data
-    lesson_id = int(query.data.replace("next_question_", ""))
-    
-    # Получаем все вопросы для урока
-    db = get_db()
-    questions = get_questions_by_lesson(db, lesson_id)
-    question_ids = [q.id for q in questions]
-    
-    # Определяем текущий индекс вопроса
-    current_idx = context.user_data.get('lesson_data', {}).get(lesson_id, {}).get('current_question', 0)
-    
-    # Увеличиваем индекс для перехода к следующему вопросу
-    next_idx = current_idx + 1
-    
-    # Если есть следующий вопрос, отправляем его
-    if next_idx < len(question_ids):
-        # Обновляем текущий индекс вопроса в контексте
-        if lesson_id in context.user_data.get('lesson_data', {}):
-            context.user_data['lesson_data'][lesson_id]['current_question'] = next_idx
+    # Проверяем тип callback_data
+    if query.data == "next_question":
+        # Используем данные из контекста
+        question_id = context.user_data.get('next_question_id')
+        lesson_id = context.user_data.get('lesson_id')
         
-        # Отправляем следующий вопрос
-        await send_question(update, context, lesson_id, question_ids[next_idx])
-    else:
-        # Если вопросы закончились, показываем результаты
-        await show_lesson_results(update, context, lesson_id)
+        if question_id and lesson_id:
+            await send_question(update, context, lesson_id, question_id)
+            # Очищаем временные данные
+            context.user_data.pop('next_question_id', None)
+        else:
+            await query.message.reply_text("Ошибка: не удалось найти следующий вопрос.")
+        return
+    
+    # Старый формат callback_data
+    if query.data.startswith("next_question_"):
+        lesson_id = int(query.data.replace("next_question_", ""))
+        
+        # Получаем все вопросы для урока
+        db = get_db()
+        questions = get_questions_by_lesson(db, lesson_id)
+        question_ids = [q.id for q in questions]
+        
+        # Определяем текущий индекс вопроса
+        current_idx = context.user_data.get('lesson_data', {}).get(lesson_id, {}).get('current_question', 0)
+        
+        # Увеличиваем индекс для перехода к следующему вопросу
+        next_idx = current_idx + 1
+        
+        # Если есть следующий вопрос, отправляем его
+        if next_idx < len(question_ids):
+            # Обновляем текущий индекс вопроса в контексте
+            if lesson_id in context.user_data.get('lesson_data', {}):
+                context.user_data['lesson_data'][lesson_id]['current_question'] = next_idx
+            
+            # Отправляем следующий вопрос
+            await send_question(update, context, lesson_id, question_ids[next_idx])
+        else:
+            # Если вопросы закончились, показываем результаты
+            await show_lesson_results(update, context, lesson_id)
 
 async def show_lesson_results(update: Update, context: ContextTypes.DEFAULT_TYPE, lesson_id: int) -> None:
     """Показывает результаты урока."""
@@ -380,10 +503,9 @@ async def show_lesson_results(update: Update, context: ContextTypes.DEFAULT_TYPE
         success_percentage = 0.0
     
     # Определяем, успешно ли пройден урок
-    is_successful = success_percentage >= 80.0  # минимальный процент для успешного прохождения
+    is_successful = success_percentage >= MIN_SUCCESS_PERCENTAGE
     
     # Обновляем прогресс пользователя в базе данных
-    from app.database.operations import update_user_progress
     update_user_progress(db, db_user.id, lesson_id, is_successful, success_percentage)
     
     # Формируем прогресс-бар
@@ -394,10 +516,10 @@ async def show_lesson_results(update: Update, context: ContextTypes.DEFAULT_TYPE
         await send_lesson_success_sticker(context, chat_id)
         
         result_message = (
-            f"🎉 *Поздравляем!* Вы успешно прошли урок \"{lesson.title}\".\n\n"
-            f"Ваш результат: {correct_answers} из {total_questions} "
+            f"🎉 **Поздравляем!** Вы успешно прошли урок \"{lesson.title}\".\n\n"
+            f"**Ваш результат:** {correct_answers} из {total_questions} "
             f"({success_percentage:.1f}%)\n\n"
-            f"Прогресс: {progress_bar}\n\n"
+            f"**Прогресс:** {progress_bar}\n\n"
             "Вы можете перейти к следующему уроку или вернуться к списку уроков."
         )
         
@@ -409,11 +531,11 @@ async def show_lesson_results(update: Update, context: ContextTypes.DEFAULT_TYPE
         await send_lesson_fail_sticker(context, chat_id)
         
         result_message = (
-            f"📊 Результаты теста по уроку \"{lesson.title}\":\n\n"
+            f"📊 **Результаты теста по уроку** \"{lesson.title}\":\n\n"
             f"Вы ответили правильно на {correct_answers} из {total_questions} "
             f"вопросов ({success_percentage:.1f}%)\n\n"
-            f"Прогресс: {progress_bar}\n\n"
-            "Для перехода к следующему уроку необходимо набрать не менее 80%.\n"
+            f"**Прогресс:** {progress_bar}\n\n"
+            f"Для перехода к следующему уроку необходимо набрать не менее {MIN_SUCCESS_PERCENTAGE}%.\n"
             "Рекомендуем повторить материал и пройти тест еще раз."
         )
     
@@ -451,12 +573,18 @@ async def show_lesson_results(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 def format_explanation(explanation: str) -> str:
     """Форматирует объяснение с переносами строк для лучшей читаемости."""
+    if not explanation:
+        return "Объяснение недоступно."
+    
     # Разбиваем объяснение на параграфы по двойным переносам строк
     paragraphs = explanation.split('\n\n')
     
     # Разбиваем каждый параграф на предложения
     formatted_paragraphs = []
     for paragraph in paragraphs:
+        if not paragraph.strip():
+            continue
+            
         sentences = paragraph.split('. ')
         # Группируем предложения по 2-3 для лучшей читаемости
         formatted_paragraph = ''
