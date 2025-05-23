@@ -1,16 +1,99 @@
-# Основные зависимости
+# Основные зависимости для базовой функциональности
 python-telegram-bot==20.8
 sqlalchemy==2.0.27
 python-dotenv==1.0.0
+requests==2.31.0
 pydantic==2.4.2
-rich==13.7.0
 
-# Дополнительные библиотеки (по необходимости)
-# Раскомментируйте, если нужны дополнительные функции:
-# langchain==0.1.9
-# langchain-core>=0.1.24,<0.2.0
-# langgraph==0.0.27
-# langchain-community==0.0.21
-# chromadb==0.4.22
-# sentence-transformers==2.2.2
-# langchain-openai==0.0.5
+# Дополнительные зависимости для улучшенной функциональности
+numpy==1.24.3
+pandas==2.0.3
+
+# Зависимости для RAG системы (опциональные, но рекомендуемые)
+sentence-transformers==2.2.2
+faiss-cpu==1.7.4
+transformers==4.35.0
+
+# Зависимости для LangChain и агентов (опциональные)
+langchain==0.1.9
+langchain-core==0.1.24
+langchain-community==0.0.21
+langchain-openai==0.0.5
+langgraph==0.0.27
+
+# Зависимости для векторных БД (альтернативы FAISS)
+# chromadb==0.4.22  # Раскомментируйте, если хотите использовать ChromaDB
+# pinecone-client==2.2.4  # Раскомментируйте для Pinecone
+
+# Утилиты для обработки данных
+python-multipart==0.0.6
+aiofiles==23.2.1
+
+# Логирование и мониторинг
+rich==13.7.0
+colorlog==6.7.0
+
+# Тестирование (для разработки)
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-mock==3.12.0
+
+# Дополнительные утилиты
+tqdm==4.66.1
+python-dateutil==2.8.2
+pytz==2023.3
+
+# Безопасность
+cryptography==41.0.7
+
+# Опциональные зависимости для продвинутых функций
+# Раскомментируйте при необходимости:
+
+# Для работы с изображениями
+# Pillow==10.1.0
+
+# Для обработки естественного языка
+# spacy==3.7.2
+# nltk==3.8.1
+
+# Для машинного обучения
+# scikit-learn==1.3.2
+# torch==2.1.0  # Если нужны PyTorch модели
+
+# Для веб-интерфейса (если планируется)
+# fastapi==0.104.1
+# uvicorn==0.24.0
+
+# Для работы с API
+# httpx==0.25.2
+# aiohttp==3.9.0
+
+# Для развертывания
+# gunicorn==21.2.0  # Для продакшена
+# supervisor==4.2.5  # Для управления процессами
+
+# Мониторинг и профилирование
+# psutil==5.9.6  # Для мониторинга системы
+# memory-profiler==0.61.0  # Для профилирования памяти
+
+# Инструкции по установке:
+# 
+# 1. Базовая установка (минимальная функциональность):
+#    pip install python-telegram-bot sqlalchemy python-dotenv requests pydantic
+#
+# 2. Полная установка (все функции):
+#    pip install -r requirements.txt
+#
+# 3. Установка только основных зависимостей:
+#    pip install -r requirements.txt --no-deps
+#    pip install python-telegram-bot sqlalchemy python-dotenv requests pydantic
+#
+# 4. Для разработки (включая тесты):
+#    pip install -r requirements.txt
+#    pip install pytest pytest-asyncio pytest-mock
+#
+# Примечания:
+# - Для работы RAG системы нужны: sentence-transformers, faiss-cpu
+# - Для работы агентов нужны: langchain, langchain-core, langchain-community
+# - Все остальные зависимости опциональны и улучшают функциональность
+# - При проблемах с установкой FAISS используйте: pip install faiss-cpu --no-cache-dir
